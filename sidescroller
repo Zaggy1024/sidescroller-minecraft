@@ -1,0 +1,1594 @@
+term.clear()
+
+colors.transparent = 65536
+
+interfaceBackColor = colors.black
+
+terrains = {{"treeSpawn", "air"}, {"grass"}, {"dirt"}, {"stone", "coalore"}, {"stone", "coalore", "ironore"}, {"stone", "coalore", "ironore", "goldore"}, {"stone", "goldore", "diamondore"}}
+layers = {1, 1, 3, 5, 20, 15, 10}
+chances = {{1, 20}, {1}, {1}, {25, 1}, {30, 2, 1}, {50, 2, 1, 1}, {100, 5, 1}, {1}}
+
+shell.run("blocksapi")
+
+itemElement = {}
+itemElement.color = 1
+itemElement.colorRGB = 2
+itemElement.char = 3
+itemElement.largeSprite = 4
+itemElement.isBlock = 5
+
+items = {
+		["apple"]={colors.transparent, {255, 0, 0}, {char="o", color=colors.red}, {
+																		{{char="\\", color=colors.brown}, {char="o", color=colors.green}},
+																		{{char="(", color=colors.red},    {char=")", color=colors.red}}
+																	   }, false},
+		["coal"]={colors.transparent, {255, 0, 0}, {char="o", color=colors.gray}, {
+																		{{char="(", color=colors.gray}, {char=")", color=colors.gray, backColor = colors.transparent}},
+																		{{char="o", color=colors.gray},    {char="'", color=colors.gray}}
+																	   }, false},
+		["diamond"]={colors.transparent, {255, 0, 0}, {char="o", color=colors.white}, {
+																		{{char="/", color=colors.lightBlue}, {char="\\", color=colors.lightBlue}},
+																		{{char="\\", color=colors.lightBlue},    {char="/", color=colors.lightBlue}}
+																	   }, false},
+		["cake"]={colors.transparent, {255, 0, 0}, {char="O", color=colors.yellow}, {
+																		{{char="\,", color=colors.yellow}, {char="\,", color=colors.yellow}},
+																		{{char="(", color=colors.brown},    {char=")", color=colors.brown}}
+																	   }, false}
+		}
+
+blankChar = {char=" ", color=colors.black}
+
+copy = function(thing)
+	output = {}
+
+	for key,value in pairs(thing) do
+		output[key] = value
+	end
+
+	return output
+end
+
+for key,value in pairs(blocks) do
+	char = copy(blankChar)
+	char.backColor = value.color
+	items[key] = {value.color, value.colorRGB, char, {{char, char}, {char, char}}, true}
+end
+
+mapItems = {}
+
+noneColor = colors.blue
+noneColorRGB = {0, 128, 192}
+bedrock = "bedrock"
+
+mapColumns = {}
+mapColumnChars = {}
+mapColumnPosYs = {}
+mapHeight = 256
+moves = {1, -1, 0}
+moveChances = {10, 10, 50}
+downwardMoveChances = {15, 0, 0}
+upwardMoveChances = {0, 15, 0}
+
+round = function(number)
+	return math.floor(number + 0.5)
+end
+
+status = ""
+playerPosString = ""
+
+setStatus = function(newStatus)
+	status = newStatus
+	lastStatusChange = os.clock()
+end
+
+-- term.write("Use lights?")
+-- useLights = (string.lower(read()) == "y")
+
+-- if useLights then
+	-- term.write("Which side?")
+	-- lightsSide = read()
+-- end
+
+updateSize = function()
+	w,h = term.getSize()
+
+	--if useLights then
+	--	lights = peripheral.wrap(lightsSide)
+	--	w,h = lights.getSize()
+	--end
+end
+
+w = 1
+h = 1
+updateSize()
+
+math.randomseed(os.time() + os.clock())
+math.randomseed(0)
+groundLevel = math.floor(h - (h * 0.4))
+
+generateColumn = function(mapColumn)
+	if mapColumnPosYs[mapColumn + 1] then
+		posY = mapColumnPosYs[mapColumn + 1]
+	elseif mapColumnPosYs[mapColumn - 1] then
+		posY = mapColumnPosYs[mapColumn - 1]
+	else
+		posY = groundLevel
+	end
+
+	move = moves[1]
+
+	allMoveChances = 0
+
+	usingMoveChances = moveChances
+
+	if posY < groundLevel - 5 then
+		usingMoveChances = downwardMoveChances
+	elseif posY > groundLevel + 5 then
+		usingMoveChances = upwardMoveChances
+	end
+
+	for i = 1, #moves do
+		allMoveChances = allMoveChances + usingMoveChances[i]
+	end
+
+	randomMove = math.random(1, allMoveChances)
+
+	moveChance = 0
+	prevMoveChance = 0
+
+	for i = 1, #moves do
+		moveChance = moveChance + usingMoveChances[i]
+
+		if randomMove >= prevMoveChance and randomMove <= moveChance then
+			move = moves[i]
+			break
+		end
+
+		prevMoveChance = moveChance
+	end
+
+	posY = posY + move
+	y = posY
+	column = {}
+	columnChars = {}
+
+	for i = 1, mapHeight do
+		column[i] = "none"
+	end
+
+	for i = 1, #terrains do				-- iterate through terrains list
+		layerCount = layers[i]
+
+		for j = 1, layers[i] do			-- generate as many layers as the layers array says
+			y = y + 1
+			block = terrains[i][1]
+			allChances = 0
+
+			for k = 1, #terrains[i] do	-- iterate through blocks in this layer to get all chances added together
+				allChances = allChances + chances[i][k]
+			end
+
+			randomNumber = math.random(0, allChances)
+
+			chance = 0
+			prevChance = chance
+
+			for k = 1, #terrains[i] do
+				chance = chance + chances[i][k]
+
+				if randomNumber >= prevChance and randomNumber <= chance then
+					block = terrains[i][k]
+					break
+				end
+
+				prevChance = chance
+			end
+
+			column[y] = block
+		end
+	end
+
+	foundTop = false
+
+	for i = 1, mapHeight do
+		block = column[i]
+
+		if block and block == "none" and not foundTop then
+			column[i] = "air"
+		elseif block and block ~= "none" then
+			foundTop = true
+		elseif foundTop then
+			column[i] = bedrock
+		end
+
+		block = column[i]
+		blockType = blocks[block]
+		blockChars = blockType.chars
+		charIndex = math.random(1, #blockChars)
+		columnChars[i] = charIndex
+	end
+
+	mapColumns[mapColumn] = column
+	mapColumnPosYs[mapColumn] = posY
+	mapColumnChars[mapColumn] = columnChars
+end
+
+generateColumns = function()
+	xPos = round(player.pos.x)
+
+	for x = 0, math.ceil(w / 2) + 5 do
+		posXRight = xPos + x
+		column = mapColumns[posXRight]
+
+		if not column then
+			generateColumn(posXRight)
+		end
+
+		posXLeft = xPos - x
+		column = mapColumns[posXLeft]
+
+		if not column then
+			generateColumn(posXLeft)
+		end
+	end
+end
+
+pointInArea = function(point, area)
+	if point.x >= area.pos.x and point.x < area.pos.x + area.size.x then
+		if point.y >= area.pos.y and point.y < area.pos.y + area.size.y then
+			return true
+		end
+	end
+
+	return false
+end
+
+screenPointIsOnScreen = function(point)
+	if point.x >= 1 and point.y >= 1 then
+		if point.x <= w and point.y <= h then
+			return true
+		end
+	end
+
+	return false
+end
+
+pointOnScreen = function(point)
+	playerPosRounded = {x=round(player.pos.x), y=round(player.pos.y)}
+	area = {}
+	area.pos = {x=playerPosRounded.x - round(w / 2), y=playerPosRounded.y - round(h / 2)}
+	area.size = {x=w, y=h}
+
+	return pointInArea(point, area)
+end
+
+columnExists = function(x)
+	if mapColumns[x] then
+		return true
+	else
+		return false
+	end
+end
+
+drawGame = function()
+	local ind = nil
+	
+	playerPosRounded = {x=round(player.pos.x), y=round(player.pos.y)}
+	off = {}
+	off.x = playerPosRounded.x - round(w / 2)
+	off.y = playerPosRounded.y - round(h / 2)
+	
+	pixels = {}
+	backColors = {}
+	charColors = {}
+
+	for y = 1, h - 1 do
+		posY = y + off.y
+
+		pixelRow = {}
+		backColorRow = {}
+		charColorRow = {}
+
+		for x = 1, w do
+			if not pointInArea({x=x, y=y}, player.hotbarArea) then
+				-- term.setCursorPos(x, y + 1)
+				--ind = x + (y + 1)*w
+				posX = x + off.x
+				column = mapColumns[posX]
+
+				if column then
+					block = column[posY]
+				else
+					block = "none"
+				end
+
+				blockType = blocks[block]
+
+				if blockType then
+					backColorRow[x] = blockType.color
+
+					charIndex = mapColumnChars[posX][posY]
+					if not charIndex then charIndex = 1 end
+
+					blockChars = blockType.chars
+					blockChar = blockChars[charIndex]
+
+					if blockChar then
+						charColorRow[x] = blockChar[2]
+						pixelRow[x] = blockChar[1]
+					else
+						pixelRow[x] = " "
+					end
+				else
+					charColorRow[x] = noneColor
+					backColorRow[x] = noneColor
+					pixelRow[x] = " "
+				end
+			else
+				pixelRow[x] = "none"
+			end
+		end
+
+		pixels[y] = pixelRow
+		backColors[y] = backColorRow
+		charColors[y] = charColorRow
+	end
+
+	for i = 1, #mapItems do
+		mapItem = mapItems[i]
+
+		if mapItem then
+			mapItemPos = mapItem.pos
+			mapItemPos = {x=round(mapItemPos.x), y=round(mapItemPos.y)}
+			screenPos = {x=mapItemPos.x - off.x, y=mapItemPos.y - off.y}
+
+			if not pointInArea(screenPos, player.hotbarArea) then
+				--screenPos.y = screenPos.y + 1
+				--ind = screenPos.x + (screenPos.y+1)*w
+
+				itemType = items[mapItem.itemType]
+
+				if itemType then
+					if pixels[screenPos.y] then
+						backColor = itemType[itemElement.color]
+
+						if backColor == colors.transparent then
+							backColors[screenPos.y][screenPos.x] = blocks["air"].color
+						else
+						print(tostring(screenPos.x)..", "..tostring(screenPos.y))
+						print(tostring(w)..", "..tostring(h))
+						print(tostring(backColors[screenPos.y]))
+							backColors[screenPos.y][screenPos.x] = backColor
+						end
+						
+						char = itemType[itemElement.char]
+						charColors[screenPos.y][screenPos.x] = char.color
+						pixels[screenPos.y][screenPos.x] = char.char
+					end
+				end
+			end
+		end
+	end
+
+	playerScreenPos = {x=playerPosRounded.x - off.x, y=playerPosRounded.y - off.y}
+	backColors[playerScreenPos.y][playerScreenPos.x] = colors.white
+	pixels[playerScreenPos.y][playerScreenPos.x] = " "
+
+	for y = 1, #pixels do
+		pixelRow = pixels[y]
+		charColorRow = charColors[y]
+		backColorRow = backColors[y]
+		term.setCursorPos(1, y + 1)
+
+		for x = 1, #pixelRow do
+			--ind = x+y*w
+			pixel = pixelRow[x]
+
+			if pixel ~= "none" then
+				backColor = backColorRow[x]
+
+				if backColor ~= nil and backColor ~= colors.transparent then
+					term.setBackgroundColor(backColor)
+				end
+
+				charColor = charColorRow[x]
+
+				if charColor ~= nil then
+					term.setTextColor(charColor)
+				end
+
+				term.write(pixel)
+			else
+				term.setCursorPos(x + 1, y + 1)
+			end
+		end
+	end
+
+	frames = frames + 1
+end
+
+drawingInventory = false
+
+draw = function()
+	term.setCursorPos(1, 1)
+
+	term.setBackgroundColor(interfaceBackColor)
+	term.setTextColor(colors.white)
+	statusText = textutils.formatTime(os.time(), false)
+	statusText = statusText.."    "..status
+	statusText = statusText.."    "..playerPosString
+	statusText = statusText..string.rep(" ", w - string.len(status))
+	term.write(statusText)
+
+	if drawingInventory then
+		drawInventory()
+	else
+		parallel.waitForAll(generateColumns, drawGame)
+	end
+end
+
+pythagorean = function(vector)
+	return math.sqrt((vector.x^2) + (vector.y^2))
+end
+ 
+limitMagnitude = function(vec)
+    length = pythagorean(vec)
+
+	if length <= 0 then
+		return{x=0, y=1}
+	elseif length <= 1 then
+		return vec
+	else
+		return {x=vec.x / length, y=vec.y / length}
+	end
+end
+
+getBlockOnVector = function(point, vec, range, checks)
+	foundPoint = nil
+
+	for i = 1, checks do
+		curPoint = {x=(point.x + (vec.x * (i / checks) * range)), y=(point.y + (vec.y * (i / checks) * range))}
+		curPointRounded = {x=round(curPoint.x), y=round(curPoint.y)}
+
+		block = mapColumns[curPointRounded.x][curPointRounded.y]
+		blockType = blocks[block]
+
+		if blockType and blockType.blocksBreaking then
+			foundPoint = curPointRounded
+			break
+		end
+	end
+
+	return foundPoint
+end
+
+getBlockBeforeBlockOnVector = function(point, vec, range, checks)
+	foundPoint = nil
+
+	for i = 1, checks do
+		curPoint = {x=point.x + (vec.x * (i / checks) * range), y=point.y + (vec.y * (i / checks) * range)}
+		curPointRounded = {x=round(curPoint.x), y=round(curPoint.y)}
+
+		block = mapColumns[curPointRounded.x][curPointRounded.y]
+		blockType = blocks[block]
+
+		if blockType and blockType.blocksBreaking then
+			break
+		end
+
+		foundPoint = curPointRounded
+	end
+
+	return foundPoint
+end
+
+setBlock = function(blockPos, block)
+	mapColumns[blockPos.x][blockPos.y] = block
+
+	blockType = blocks[block]
+	blockChars = blockType.chars
+	charIndex = math.random(1, #blockChars)
+	mapColumnChars[blockPos.x][blockPos.y] = charIndex
+end
+
+createItem = function(itemName, position, dir)
+	return {itemType=itemName, pos=position, vel={x=math.random(1, 10) * dir, y=0}, friction=2, groundFriction = 10}
+end
+
+createDrop = function(itemName, position, dir)
+	mapItems[#mapItems + 1] = createItem(itemName, position, dir)
+end
+
+for i = 1, 15 do
+	createDrop("apple", {x=15, y=5}, math.random(-1, 1))
+end
+
+createDrop("cake", {x=10, y=5}, 0)
+
+breakBlock = function(blockPos)
+	block = mapColumns[blockPos.x][blockPos.y]
+
+	if not block then
+		block = "none"
+	end
+
+	blockType = blocks[block]
+
+	if blockType and blockType.breakable then
+		dropsList = blockType.drops
+
+		for i = 1, #dropsList do
+			drop = dropsList[i]
+			itemName = drop.drop
+			dropCount = 1
+
+			if drop.drops then
+				dropCount = drop.drops
+
+				if drop.randomize then
+					dropCount = dropCount + math.random(0, drop.randomize)
+				end
+			end
+
+			for j = 1, dropCount do
+				if drop.block then
+					addItemToInventory(createItem(itemName, {x=1, y=1}, 0))
+				else
+					createDrop(itemName, blockPos, 0)
+				end
+			end
+		end
+
+		if blockPos.y > 0 then
+			setBlock(blockPos, blockType.replaceWith)
+		else
+			mapColumns[blockPos.x][blockPos.y] = "none"
+		end
+	end
+end
+
+placeBlock = function(blockPos, block)
+	if walkable(blockPos) then
+		setBlock(blockPos, block)
+	end
+end
+
+onGround = function()
+	blockUnderPos = {x=round(player.pos.x), y=math.floor(player.pos.y) + 1}
+	blockInsidePos = {x=round(player.pos.x), y=math.floor(player.pos.y)}
+
+	return not walkable(blockUnderPos) and walkable(blockInsidePos)
+end
+
+jump = function()
+	if onGround() then
+		player.vel.y = player.speed.y
+	end
+end
+
+walkable = function(pos)
+	block = mapColumns[pos.x][pos.y]
+
+	if block then
+		blockType = blocks[block]
+
+		if blockType then
+			if not blockType.interactable then
+				return true
+			end
+		else
+			return true
+		end
+	else
+		return true
+	end
+
+	return false
+end
+
+calculateNewPos = function(entity, curFrameTime)
+	newEntity = {}
+	newEntity.pos = {x=(entity.pos.x + (entity.vel.x * curFrameTime)), y=(entity.pos.y - (entity.vel.y * curFrameTime))}
+	newEntity.vel = {x=(entity.vel.x / (((entity.friction - 1) * curFrameTime) + 1)), y=(entity.vel.y - (gravity * curFrameTime))}
+
+	return newEntity
+end
+
+collide = function(entity, newEntity)
+	if columnExists(round(entity.pos.x)) and columnExists(round(newEntity.pos.x)) then
+		breaking = false
+
+		for i = 1, 10 do
+			if breaking then break end
+
+			collidedEntity = {}
+			collidedEntity.pos = newEntity.pos
+			collidedEntity.vel = newEntity.vel
+
+			if entity.pos.y ~= newEntity.pos.y then
+				y = math.floor(entity.pos.y)
+				yTest = round(newEntity.pos.y)
+				x = round(entity.pos.x)
+
+				if math.floor(newEntity.pos.y) < round(entity.pos.y) then		-- upward collision detection
+					y = round(entity.pos.y)
+					yTest = math.floor(newEntity.pos.y)
+					dir = -1
+
+					while y >= yTest do
+						if not walkable({x=x, y=y}) then
+							blockInWayPos = {x=x, y=y - dir}
+
+							if walkable(blockInWayPos) then
+								collidedEntity.pos.y = y - dir
+								collidedEntity.vel.y = 0
+								collidedEntity.vel.x = collidedEntity.vel.x / entity.groundFriction
+								break
+							end
+						end
+
+						y = y + dir
+					end
+				elseif yTest > y then	-- downward collision detection
+					dir = 1
+
+					while y <= yTest do
+						if not walkable({x=x, y=y}) then
+							blockInWayPos = {x=x, y=y - dir}
+
+							if walkable(blockInWayPos) then
+								collidedEntity.pos.y = y - dir
+								collidedEntity.vel.y = 0
+								collidedEntity.vel.x = collidedEntity.vel.x / entity.groundFriction
+								break
+							else
+								collidedEntity.pos.y = y
+								collidedEntity.vel.y = 0
+								collidedEntity.vel.x = collidedEntity.vel.x / entity.groundFriction
+								break
+							end
+						end
+
+						y = y + dir
+					end
+				end
+			end
+
+			if entity.pos.x ~= newEntity.pos.x then
+				x = round(entity.pos.x)
+				xTest = round(newEntity.pos.x)
+				y = round(newEntity.pos.y)
+
+				if xTest < x then		-- backward collision detection
+					dir = -1
+
+					while x >= xTest do
+						if not walkable({x=x, y=y}) then
+							blockInWayPos = {x=x - dir, y=y}
+
+							if walkable(blockInWayPos) then
+								collidedEntity.pos.x = x - dir
+								collidedEntity.vel.x = 0
+								break
+							end
+						end
+
+						x = x + dir
+					end
+				elseif xTest > x then	-- forward collision detection
+					dir = 1
+
+					while x <= xTest do
+						if not walkable({x=x, y=y}) then
+							blockInWayPos = {x=x - dir, y=y}
+
+							if walkable(blockInWayPos) then
+								collidedEntity.pos.x = x - dir
+								collidedEntity.vel.x = 0
+								break
+							end
+						end
+
+						x = x + dir
+					end
+				end
+			end
+
+			if collidedEntity.pos == newEntity.pos and collidedEntity.vel == newEntity.vel then
+				breaking = true
+			end
+
+			newEntity = collidedEntity
+		end
+
+		return newEntity
+	else
+		return entity
+	end
+end
+
+blankItem = {itemType="none"}
+
+player = {}
+player.pos = {x=1, y=1}
+player.vel = {x=0, y=0}
+player.friction = 2
+player.groundFriction = 10
+player.placeDistance = 2
+player.speed = {x=10, y=8}	-- movement and jump speed
+player.inventoryWidth = 9
+player.inventory = {}
+player.hotbar = 4
+player.hotbarCached = {}
+player.hotbarArea = {}
+player.selectedItem = 1
+player.craftingSize = {x=2, y=2}
+player.crafting = {}
+player.craftingOutput = copy(blankItem)
+player.movingItemPos = nil
+player.splittingItems = false
+
+for y = 1, player.hotbar do
+	line = {}
+
+	for x = 1, player.inventoryWidth do
+		line[x] = copy(blankItem)
+	end
+
+	player.inventory[y] = line
+end
+
+for y = 1, player.craftingSize.y do
+	line = {}
+
+	for x = 1, player.craftingSize.x do
+		line[x] = copy(blankItem)
+	end
+
+	player.crafting[y] = line
+end
+
+append = function(array, item)
+	newArray = array
+	newArray[#newArray + 1] = item
+
+	return newArray
+end
+
+addItemToInventory = function(item)
+	success = false
+
+	for i = 1, player.inventoryWidth do
+		itemAtIndex = player.inventory[player.hotbar][i]
+
+		if itemAtIndex then
+			itemTypeAtIndex = itemAtIndex.itemType
+
+			if itemTypeAtIndex == item.itemType and #itemAtIndex.items < 64 then
+				success = true
+			end
+		end
+
+		if success then
+			itemAtIndex.items = append(itemAtIndex.items, item)
+			break
+		end
+	end
+
+	if not success then
+		for y = 1, player.hotbar - 1 do
+			inventoryLine = player.inventory[y]
+
+			for x = 1, #inventoryLine do
+				itemAtIndex = inventoryLine[x]
+
+				if itemAtIndex then
+					itemTypeAtIndex = itemAtIndex.itemType
+ 
+					if itemTypeAtIndex == item.itemType and #itemAtIndex.items < 64 then
+						success = true
+					end
+				end
+
+				if success then
+					itemAtIndex.items = append(itemAtIndex.items, item)
+					break
+				end
+			end
+
+			if success then break end
+		end
+	end
+
+	if not success then
+		for i = 1, player.inventoryWidth do
+			itemAtIndex = player.inventory[player.hotbar][i]
+
+			if itemAtIndex then
+				itemTypeAtIndex = itemAtIndex.itemType
+
+				if itemTypeAtIndex == "none" then
+					success = true
+				end
+			else
+				success = true
+			end
+
+			if success then
+				player.inventory[player.hotbar][i] = {itemType=item.itemType, items={item}}
+				break
+			end
+		end
+	end
+
+	if not success then
+		for y = 1, player.hotbar - 1 do
+			inventoryLine = player.inventory[y]
+
+			for x = 1, #inventoryLine do
+				itemAtIndex = inventoryLine[x]
+
+				if itemAtIndex then
+					itemTypeAtIndex = itemAtIndex.itemType
+
+					if itemTypeAtIndex == "none" then
+						success = true
+					end
+				else
+					success = true
+				end
+
+				if success then
+					player.inventory[y][x] = {itemType=item.itemType, items={item}}
+					break
+				end
+			end
+
+			if success then break end
+		end
+	end
+
+	if not success then
+		setStatus("failed to add item "..tostring(item.itemType))
+	end
+
+	updateHotbar()
+	return success
+end
+
+drawLine = function(charArray, line, transparentColor, column)
+	term.setCursorPos(column, line)
+
+	for i = 1, #charArray do
+		char = charArray[i]
+
+		term.setTextColor(char.textColor)
+
+		if char.backColor == colors.transparent then
+			term.setBackgroundColor(transparentColor)
+		else
+			term.setBackgroundColor(char.backColor)
+		end
+
+		term.write(char.char)
+	end
+end
+
+drawHotbar = function()
+	columns = player.hotbarCached
+
+	for i = 1, #columns do
+		drawLine(columns[i], (h - #columns + i), interfaceBackColor, player.hotbarArea.pos.x)
+	end
+end
+
+drawInventory = function()
+	inventoryWidth = (player.inventoryWidth * 3) + 1
+	inventoryHeight = (player.hotbar * 3) + 1
+	width = inventoryWidth + (player.craftingSize.x * 3) + 5
+	height = inventoryHeight
+	pos = {x=((w - width) / 2) + 2, y=((h - height) / 2) - 1}
+
+	for y = 1, height + 2 do
+		term.setCursorPos(pos.x - 1, pos.y + y)
+
+		if y == 1 or y == height + 2 then
+			term.write("+"..string.rep("-", width - 2).."+")
+		else
+			term.write("|"..string.rep(" ", width - 2).."|")
+		end
+	end
+
+	for y = 1, player.hotbar do
+		curPosY = (y * 3)
+		inventoryLine = player.inventory[y]
+		term.setCursorPos(pos.x, pos.y + curPosY)
+		term.write("|")
+		term.setCursorPos(pos.x, pos.y + curPosY + 1)
+		term.write("|")
+		term.setCursorPos(pos.x, pos.y + curPosY + 2)
+		term.write("+")
+
+		for x = 1, player.inventoryWidth do
+			curPosX = (x * 3) - 2
+
+			if y == 1 then
+				term.setCursorPos(pos.x + curPosX - 1, pos.y + curPosY - 1)
+				term.write("+--")
+
+				if x == player.inventoryWidth then
+					term.write("+")
+				end
+			end
+
+			item = inventoryLine[x]
+			failed = true
+
+			if item and item.itemType ~= "none" then
+				itemType = items[item.itemType]
+
+				if itemType then
+					charTable = itemType[itemElement.largeSprite]
+
+					for spriteY = 1, #charTable do
+						charLine = charTable[spriteY]
+
+						for spriteX = 1, #charLine do
+							char = charLine[spriteX]
+							term.setCursorPos(pos.x + curPosX + spriteX - 1, pos.y + curPosY + spriteY - 1)
+							term.setTextColor(char.color)
+
+							if char.backColor and char.backColor ~= colors.transparent then
+								term.setBackgroundColor(char.backColor)
+							else
+								term.setBackgroundColor(interfaceBackColor)
+							end
+
+							term.write(char.char)
+							term.setTextColor(colors.white)
+							term.setBackgroundColor(interfaceBackColor)
+						end
+					end
+
+					term.setCursorPos(pos.x + curPosX, pos.y + curPosY + 2)
+
+					if item.items then
+						numItems = #item.items
+
+						if numItems > 1 then
+							term.write(tostring(numItems))
+						else
+							term.write("-")
+						end
+
+						if numItems < 10 then
+							term.write("-")
+						end
+
+						term.write("+")
+					else
+						term.write("--+")
+					end
+
+					failed = false
+				end
+			end
+
+			if failed then
+				term.setCursorPos(pos.x + curPosX, pos.y + curPosY)
+				term.write("  |")
+				term.setCursorPos(pos.x + curPosX, pos.y + curPosY + 1)
+				term.write("  |")
+				term.setCursorPos(pos.x + curPosX, pos.y + curPosY + 2)
+				term.write("--+")
+			else
+				term.setCursorPos(pos.x + curPosX + 2, pos.y + curPosY)
+				term.write("|")
+				term.setCursorPos(pos.x + curPosX + 2, pos.y + curPosY + 1)
+				term.write("|")
+				term.setCursorPos(pos.x + curPosX + 2, pos.y + curPosY + 2)
+				term.write("+")
+			end
+		end
+	end
+
+	craftingHeight = (player.craftingSize.y * 3) + 1
+	craftingWidth = (player.craftingSize.x * 3) + 1
+	craftingPos = {x=pos.x + inventoryWidth + 2, y=pos.y + ((height - craftingHeight) / 2) - 3}
+
+	for y = 1, player.craftingSize.y do
+		curPosY = (y * 3)
+		craftingLine = player.crafting[y]
+		term.setCursorPos(craftingPos.x, craftingPos.y + curPosY)
+		term.write("|")
+		term.setCursorPos(craftingPos.x, craftingPos.y + curPosY + 1)
+		term.write("|")
+		term.setCursorPos(craftingPos.x, craftingPos.y + curPosY + 2)
+		term.write("+")
+
+		for x = 1, player.craftingSize.x do
+			curPosX = (x * 3) - 2
+
+			if y == 1 then
+				term.setCursorPos(craftingPos.x + curPosX - 1, craftingPos.y + curPosY - 1)
+				term.write("+--")
+
+				if x == player.craftingSize.x then
+					term.write("+")
+				end
+			end
+
+			item = craftingLine[x]
+			failed = true
+
+			if item and item.itemType ~= "none" then
+				itemType = items[item.itemType]
+
+				if itemType then
+					charTable = itemType[itemElement.largeSprite]
+
+					for spriteY = 1, #charTable do
+						charLine = charTable[spriteY]
+
+						for spriteX = 1, #charLine do
+							char = charLine[spriteX]
+							term.setCursorPos(craftingPos.x + curPosX + spriteX - 1, craftingPos.y + curPosY + spriteY - 1)
+							term.setTextColor(char.color)
+
+							if char.backColor and char.backColor ~= colors.transparent then
+								term.setBackgroundColor(char.backColor)
+							else
+								term.setBackgroundColor(interfaceBackColor)
+							end
+
+							term.write(char.char)
+							term.setTextColor(colors.white)
+							term.setBackgroundColor(interfaceBackColor)
+						end
+					end
+
+					term.setCursorPos(craftingPos.x + curPosX, craftingPos.y + curPosY + 2)
+
+					if item.items then
+						numItems = #item.items
+
+						if numItems > 1 then
+							term.write(tostring(numItems))
+						else
+							term.write("-")
+						end
+
+						if numItems < 10 then
+							term.write("-")
+						end
+
+						term.write("+")
+					else
+						term.write("--+")
+					end
+
+					failed = false
+				end
+			end
+
+			if failed then
+				term.setCursorPos(craftingPos.x + curPosX, craftingPos.y + curPosY)
+				term.write("  |")
+				term.setCursorPos(craftingPos.x + curPosX, craftingPos.y + curPosY + 1)
+				term.write("  |")
+				term.setCursorPos(craftingPos.x + curPosX, craftingPos.y + curPosY + 2)
+				term.write("--+")
+			else
+				term.setCursorPos(craftingPos.x + curPosX + 2, craftingPos.y + curPosY)
+				term.write("|")
+				term.setCursorPos(craftingPos.x + curPosX + 2, craftingPos.y + curPosY + 1)
+				term.write("|")
+				term.setCursorPos(craftingPos.x + curPosX + 2, craftingPos.y + curPosY + 2)
+				term.write("+")
+			end
+		end
+	end
+
+	craftingOutputPos = {x=(craftingPos.x + math.floor(craftingWidth / 2) - 2), y=(craftingPos.y + craftingHeight + 4)}
+
+	for i = -2, 3 do	-- start at -2 to add arrow
+		term.setCursorPos(craftingOutputPos.x, craftingOutputPos.y + i)
+
+		if i == -2 then
+			term.write("  |")
+		elseif i == -1 then
+			term.write("  V")
+		elseif i == 0 then
+			term.write("+--+")
+		elseif i == 1 or i == 2 then
+			term.write("|")
+
+			if player.craftingOutput and player.craftingOutput.itemType ~= "none" then
+				itemType = items[player.craftingOutput.itemType]
+
+				if itemType then
+					charLine = itemType[itemElement.largeSprite][i]
+
+					for spriteX = 1, #charTable do
+						char = charLine[spriteX]
+						term.setTextColor(char.color)
+
+						if char.backColor and char.backColor ~= colors.transparent then
+							term.setBackgroundColor(char.backColor)
+						else
+							term.setBackgroundColor(interfaceBackColor)
+						end
+
+						term.write(char.char)
+						term.setTextColor(colors.white)
+						term.setBackgroundColor(interfaceBackColor)
+					end
+				else
+					term.write("  ")
+				end
+			else
+				term.write("  ")
+			end
+
+			term.write("|")
+		elseif i == 3 then
+			term.write("+")
+
+			if player.craftingOutput.itemType ~= "none" then
+				numItems = #player.craftingOutput.items
+
+				if numItems > 1 then
+					term.write(tostring(numItems))
+				else
+					term.write("-")
+				end
+
+				if numItems < 10 then
+					term.write("-")
+				end
+			else
+				term.write("--")
+			end
+
+			term.write("+")
+		end
+	end
+end
+
+getInventorySlot = function(screenPos)
+	inventoryWidth = (player.inventoryWidth * 3) + 1
+	inventoryHeight = (player.hotbar * 3) + 1
+	width = inventoryWidth + (player.craftingSize.x * 3) + 6
+	height = inventoryHeight
+	pos = {x=((w - width) / 2) + 2, y=((h - height) / 2)}
+
+	if screenPos.x > pos.x and screenPos.y > pos.y and screenPos.x < pos.x + inventoryWidth and screenPos.y <= pos.y + inventoryHeight then
+		curPos = {}
+
+		for y = 1, player.hotbar do
+			curPos.y = pos.y + (y * 3) - 2
+
+			for x = 1, player.inventoryWidth do
+				curPos.x = pos.x + (x * 3) - 2
+
+				if screenPos.x > curPos.x and screenPos.y > curPos.y and screenPos.x < curPos.x + 2 and screenPos.y <= curPos.y + 2 then
+					return {x=x, y=y, area="inventory"}
+				end
+			end
+		end
+	end
+
+	craftingHeight = (player.craftingSize.y * 3) + 1
+	craftingWidth = (player.craftingSize.x * 3) + 1
+	craftingPos = {x=pos.x + inventoryWidth + 2, y=pos.y + ((height - craftingHeight) / 2) - 3}
+
+	if screenPos.x > craftingPos.x and screenPos.y > craftingPos.y and screenPos.x < craftingPos.x + craftingWidth and screenPos.y <= craftingPos.y + craftingHeight then
+		curPos = {}
+
+		for y = 1, player.craftingSize.y do
+			curPos.y = craftingPos.y + (y * 3) - 2
+
+			for x = 1, player.craftingSize.x do
+				curPos.x = craftingPos.x + (x * 3) - 2
+
+				if screenPos.x > curPos.x and screenPos.y > curPos.y and screenPos.x < curPos.x + 2 and screenPos.y <= curPos.y + 2 then
+					return {x=x, y=y, area="crafting"}
+				end
+			end
+		end
+	end
+
+	craftingOutputPos = {x=(craftingPos.x + math.floor(craftingWidth / 2) - 1), y=(craftingPos.y + craftingHeight + 4)}
+
+	if screenPos.x >= craftingOutputPos.x and screenPos.y >= craftingOutputPos.y and screenPos.x < craftingOutputPos.x + 2 and screenPos.y < craftingOutputPos.y + 2 then
+		return {x=1, y=1, area="craftingOutput"}
+	end
+end
+
+updateHotbar = function()
+	columns = {}
+	width = (player.inventoryWidth * 2) + 1
+
+	plusSign = {char="+", textColor=colors.white, backColor=interfaceBackColor}
+	dashSign = {char="-", textColor=colors.white, backColor=interfaceBackColor}
+	leftBracket = {char="[", textColor=colors.white, backColor=interfaceBackColor}
+	rightBracket = {char="]", textColor=colors.white, backColor=interfaceBackColor}
+
+	hotbar = player.inventory[player.hotbar]
+
+	verticalBar = {char="|", textColor=colors.white, backColor=interfaceBackColor}
+	topBar = {plusSign}
+	bottomBar = {plusSign}
+
+	if player.selectedItem == 1 then
+		hotbarBar = {leftBracket}
+	else
+		hotbarBar = {verticalBar}
+	end
+
+	for i = 1, player.inventoryWidth do
+		x = i * 2
+		item = hotbar[i]
+		failed = true
+
+		if item and item.itemType ~= "none" then
+			itemType = items[item.itemType]
+
+			if itemType then
+				char = itemType[itemElement.char]
+				hotbarBar[x] = {char=char.char, textColor=char.color, backColor=itemType[itemElement.color]}
+				failed = false
+
+				numItems = #item.items
+				numItemsString = tostring(numItems)
+
+				if numItems > 1 then
+					topBar[x] = {char=string.sub(numItemsString, 1, 1), textColor=colors.white, backColor=interfaceBackColor}
+				else
+					topBar[x] = dashSign
+				end
+
+				if numItems > 9 then
+					bottomBar[x] = {char=string.sub(numItemsString, 2, 2), textColor=colors.white, backColor=interfaceBackColor}
+				else
+					bottomBar[x] = dashSign
+				end
+			end
+		end
+
+		if failed then
+			topBar[x] = dashSign
+			hotbarBar[x] = {char=" ", textColor=colors.black, backColor=interfaceBackColor}
+			bottomBar[x] = dashSign
+		end
+
+		if i == player.selectedItem then
+			hotbarBar[x + 1] = rightBracket
+		elseif i == player.selectedItem - 1 then
+			hotbarBar[x + 1] = leftBracket
+		else
+			hotbarBar[x + 1] = verticalBar
+		end
+
+		if i == player.inventoryWidth then
+			topBar[x + 1] = plusSign
+			bottomBar[x + 1] = plusSign
+		else
+			topBar[x + 1] = dashSign
+			bottomBar[x + 1] = dashSign
+		end
+	end
+
+	columns[#columns + 1] = topBar
+	columns[#columns + 1] = hotbarBar
+	columns[#columns + 1] = bottomBar
+
+	player.hotbarCached = columns
+
+	pos = {x=round((w - width) / 2), y=(h - #columns)}
+	size = {x=width, y=#columns}
+	player.hotbarArea = {pos=pos, size=size}
+
+	drawHotbar()
+end
+
+getInvSlot = function(pos)
+	if pos.area == "inventory" then
+		return player.inventory[pos.y][pos.x]
+	elseif pos.area == "crafting" then
+		return player.crafting[pos.y][pos.x]
+	elseif pos.area == "craftingOutput" then
+		return player.craftingOutput
+	end
+end
+
+setInvSlot = function(pos, item)
+	if pos.area == "inventory" then
+		player.inventory[pos.y][pos.x] = item
+	elseif pos.area == "crafting" then
+		player.crafting[pos.y][pos.x] = item
+	elseif pos.area == "craftingOutput" then
+		player.craftingOutput = item
+	end
+end
+
+updateHotbar()
+
+gravity = 32
+
+setStatus("")
+
+generateColumns()
+
+running = true
+paused = false
+
+lastFrame = os.clock()
+frameTime = 0.01
+frameTimer = os.startTimer(0)
+frames = 0
+fpsTimer = 0
+
+blockUpdateTime = 0.0
+blockUpdateTimer = os.startTimer(0)
+
+while running do
+	updateSize()
+	local event, p1, p2, p3 = os.pullEvent()
+
+	if event == "terminate" then
+		running = false
+	elseif event == "key" then
+		if p1 == keys.d then
+			player.vel.x = player.speed.x
+		elseif p1 == keys.a then
+			player.vel.x = -player.speed.x
+		elseif p1 == keys.w then
+			jump()
+		elseif p1 == keys.p then
+			paused = not paused
+
+			if paused then
+				setStatus("Game paused.")
+			end
+		elseif p1 == keys.e then
+			drawingInventory = not drawingInventory
+
+			if not drawingInventory then
+				updateHotbar()
+			end
+		end
+	elseif event == "mouse_scroll" then
+		player.selectedItem = player.selectedItem + p1
+
+		if player.selectedItem > player.inventoryWidth then
+			player.selectedItem = 1
+		elseif player.selectedItem < 1 then
+			player.selectedItem = player.inventoryWidth
+		end
+
+		updateHotbar()
+	elseif event == "mouse_click" or event == "mouse_drag" then
+		if not drawingInventory then
+			playerRounded = {x=round(player.pos.x), y=round(player.pos.y)}
+			off = {x=(playerRounded.x - round(w / 2)), y=(playerRounded.y - round(h / 2))}
+			gamePoint = {x=p2 + off.x, y=p3 + off.y - 1}
+
+			vector = {x=gamePoint.x - playerRounded.x, y=gamePoint.y - playerRounded.y}
+			vector = limitMagnitude(vector)
+
+			if p1 == 1 then
+				blockPos = getBlockOnVector(playerRounded, vector, player.placeDistance, 15)
+
+				if blockPos then
+					breakBlock(blockPos)
+				end
+
+				blockPos = nil
+			elseif p1 == 2 then
+				blockPos = getBlockBeforeBlockOnVector(playerRounded, vector, player.placeDistance, 15)
+
+				if blockPos then
+					hotbar = player.inventory[player.hotbar]
+					selectedItem = hotbar[player.selectedItem]
+
+					if selectedItem and selectedItem.itemType and selectedItem.itemType ~= "none" then
+						if items[selectedItem.itemType][itemElement.isBlock] then
+							placeBlock(blockPos, selectedItem.itemType)
+							table.remove(selectedItem.items)
+
+							if #selectedItem.items <= 0 then
+								player.inventory[player.hotbar][player.selectedItem] = copy(blankItem)
+							end
+
+							updateHotbar()
+						end
+					end
+				end
+			end
+		end
+	end
+
+	if drawingInventory and event == "mouse_click" then
+		position = getInventorySlot({x=p2, y=p3})
+
+		if player.movingItemPos and position and position.area ~= "craftingOutput" then
+			movingItemSlot = getInvSlot(player.movingItemPos)
+			placingItemSlot = getInvSlot(position)
+
+			if p1 == 1 then
+				if player.splittingItems and (placingItemSlot.itemType == "none" or placingItemSlot.itemType == movingItemSlot.itemType) then	--splitting items
+					split1 = movingItemSlot
+					split2 = placingItemSlot
+
+					if split2.itemType == "none" then
+						split2 = copy(split1)
+						split2.items = {}
+					end
+
+					for i = 1, math.ceil(#split1.items / 2) do
+						split2.items = append(split2.items, table.remove(split1.items, i))
+					end
+
+					if #split1.items <= 0 then
+						split1 = copy(blankItem)
+					end
+
+					if #split2.items <= 0 then
+						split2 = copy(blankItem)
+					end
+
+					setInvSlot(player.movingItemPos, split1)
+					setInvSlot(position, split2)
+				elseif movingItemSlot.itemType == placingItemSlot.itemType then	--combining items
+					numItems = #movingItemSlot.items
+
+					for i = 1, numItems do
+						if #placingItemSlot.items >= 64 then break end
+
+						placingItemSlot.items = append(placingItemSlot.items, table.remove(movingItemSlot.items))
+					end
+
+					if #movingItemSlot.items <= 0 then
+						movingItemSlot = copy(blankItem)
+					end
+
+					if #placingItemSlot.items <= 0 then
+						placingItemSlot = copy(blankItem)
+					end
+
+					setInvSlot(player.movingItemPos, movingItemSlot)
+					setInvSlot(position, placingItemSlot)
+				else															--moving items
+					prevSlot = copy(movingItemSlot)
+					setInvSlot(player.movingItemPos, copy(placingItemSlot))
+					setInvSlot(position, prevSlot)
+				end
+
+				player.movingItemPos = nil
+			elseif p1 == 2 then	--dropping items
+				if movingItemSlot.itemType == placingItemSlot.itemType or placingItemSlot.itemType == "none" then
+					if placingItemSlot.itemType == "none" then
+						placingItemSlot.itemType = movingItemSlot.itemType
+					end
+
+					if not placingItemSlot.items then
+						placingItemSlot.items = {}
+					end
+
+					placingItemSlot.items = append(placingItemSlot.items, table.remove(movingItemSlot.items))
+
+					if #movingItemSlot.items <= 0 then
+						movingItemSlot = copy(blankItem)
+					end
+
+					setInvSlot(position, placingItemSlot)
+					setInvSlot(player.movingItemPos, movingItemSlot)
+
+					if movingItemSlot.itemType == "none" then
+						player.movingItemPos = nil
+					end
+				end
+			end
+		elseif position then
+			if p1 == 2 then
+				itemAtPosition = getInvSlot(position)
+
+				if itemAtPosition and itemAtPosition.itemType ~= "none" then
+					player.movingItemPos = position
+					player.splittingItems = true
+				end
+			elseif p1 == 1 and getInvSlot(position).itemType ~= "none" then
+				player.movingItemPos = position
+				player.splittingItems = false
+			end
+		end
+	end
+
+	if event == "timer" then
+		if p1 == frameTimer then
+			clockNow = os.clock()
+			timeSinceLastFrame = clockNow - lastFrame
+			fpsTimer = fpsTimer + timeSinceLastFrame
+
+			if not paused and fpsTimer >= 1 then
+				setStatus(tostring(frames).." fps")
+				fpsTimer = 0
+				frames = 0
+			end
+
+			lastFrame = clockNow
+
+			if not paused and not drawingInventory then
+				playerPosRounded = {x=round(player.pos.x), y=round(player.pos.y)}
+
+				for i = 1, #mapItems do
+					mapItem = mapItems[i]
+
+					if mapItem then
+						mapItemPos = {x=round(mapItem.pos.x), y=round(mapItem.pos.y)}
+
+						if mapItemPos and pointOnScreen(mapItemPos) then
+							if mapItemPos.x == playerPosRounded.x and mapItemPos.y == playerPosRounded.y then
+								success = addItemToInventory(mapItem)
+
+								if success then table.remove(mapItems, i) end
+							else
+								-- oldItem = mapItems[i]
+								-- newItem = calculateNewPos(oldItem, timeSinceLastFrame)
+								-- newItem = collide(oldItem, newItem)
+								-- mapItems[i].pos = newItem.pos
+								-- mapItems[i].vel = newItem.vel
+							end
+						end
+					end
+				end
+
+				newPlayer = calculateNewPos(player, timeSinceLastFrame)
+				newPlayer = collide(player, newPlayer)
+
+				player.pos = newPlayer.pos
+				player.vel = newPlayer.vel
+
+				newStatusChange = os.clock()
+
+				if newStatusChange - lastStatusChange > 0.25 then
+					--setStatus("")
+				end
+
+				playerPosString = "x: "..player.pos.x..", y: "..player.pos.y
+			end
+
+			draw()
+
+			frameTimer = os.startTimer(frameTime)
+		elseif p1 == blockUpdateTimer then
+			off = {}
+			off.x = playerPosRounded.x - round(w / 2)
+			off.y = playerPosRounded.y - round(h / 2)
+
+			for x = 1, w do
+				pos = {}
+				pos.x = x + off.x
+				column = mapColumns[pos.x]
+
+				if column then
+					for y = 1, h do
+						pos.y = y + off.y
+						block = column[pos.y]
+
+						if block then
+							blockType = blocks[block]
+
+							if blockType and blockType.onUpdate then
+								blockType.onUpdate(block, pos)
+							end
+						end
+					end
+				end
+			end
+
+			blockUpdateTimer = os.startTimer(blockUpdateTime)
+		end
+	end
+end
