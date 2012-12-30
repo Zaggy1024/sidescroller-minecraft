@@ -1,13 +1,59 @@
 blocks = {}
 
-createBlock = function(blockName, interactable, breakable, blocksBreaking, color, chars, replaceWith, drops, onBlockUpdate)
+createBlock = function(blockName, interactable, breakable, blocksBreaking, color, chars, replaceWith, drops, onBlockUpdate, getCharColor)
 	blocks[blockName] = {
 	interactable=interactable,
 	breakable=breakable,
 	blocksBreaking=blocksBreaking,
 	color=color, chars=chars,
 	replaceWith=replaceWith, drops=drops,
-	onUpdate=onBlockUpdate}
+	onUpdate=onBlockUpdate,
+	getCharColor=getCharColor}
+end
+
+blockUpdates = function()
+	off = {}
+	off.x = playerPosRounded.x - round(w / 2)
+	off.y = playerPosRounded.y - round(h / 2)
+
+	for x = 1, w do
+		pos = {}
+		pos.x = x + off.x
+		column = mapColumns[pos.x]
+
+		if column then
+			for y = 1, h do
+				pos.y = y + off.y
+				block = column[pos.y]
+
+				if block and block == "redstone" then
+					mapColumnBlockProperties[pos.x][pos.y].charged = false
+				end
+			end
+		end
+	end
+
+	for x = 1, w do
+		pos = {}
+		pos.x = x + off.x
+		column = mapColumns[pos.x]
+		columnProperties = mapColumnBlockProperties[pos.x]
+
+		if column then
+			for y = 1, h do
+				pos.y = y + off.y
+				block = column[pos.y]
+
+				if block then
+					blockType = blocks[block]
+
+					if blockType and blockType.onUpdate then
+						blockType.onUpdate(block, pos, columnProperties[pos.y])
+					end
+				end
+			end
+		end
+	end
 end
 
 tree = {{nil, "leaves", "leaves", "leaves", nil},
@@ -17,7 +63,7 @@ tree = {{nil, "leaves", "leaves", "leaves", nil},
 		{nil, nil, "wood", nil, nil}}
 treeOrigin = {x=3, y=5}
 
-treeSpawnUpdate = function(block, pos)
+treeSpawnUpdate = function(block, pos, properties)
 	cancel = false
 
 	for y = 1, #tree do
@@ -44,8 +90,15 @@ treeSpawnUpdate = function(block, pos)
 			treeRow = tree[y]
 
 			for x = 1, #treeRow do
-				if tree[y][x] then
-					setBlock({x=pos.x + x - treeOrigin.x, y=pos.y + y - treeOrigin.y}, tree[y][x])
+				block = tree[y][x]
+
+				if block then
+					blockPosition = {x=pos.x + x - treeOrigin.x, y=pos.y + y - treeOrigin.y}
+					setBlock(blockPosition, block)
+
+					if block == "leaves" and math.random(25) == 1 then
+						setBlock(blockPosition, "appleLeaves")
+					end
 				end
 			end
 		end
@@ -54,9 +107,9 @@ treeSpawnUpdate = function(block, pos)
 	end
 end
 
-createBlock("treeSpawn", false, true, true, colors.transparent, {{" ", colors.black}}, "air", {}, treeSpawnUpdate)
+createBlock("treeSpawn", false, true, true, colors.transparent, {{" ", colors.black}}, "air", {}, treeSpawnUpdate, nil)
 
-saplingUpdate = function(block, pos)
+saplingUpdate = function(block, pos, properties)
 	blockUnder = mapColumns[pos.x][pos.y + 1]
 
 	if not blockUnder or (blockUnder ~= "grass" and blockUnder ~= "dirt") then
@@ -70,9 +123,9 @@ saplingUpdate = function(block, pos)
 	end
 end
 
-createBlock("sapling", false, true, true, colors.green, {{"/", colors.brown}, {"\\", colors.brown}, {"|", colors.brown}}, "air", {{drop="sapling", block=false}}, saplingUpdate)
+createBlock("sapling", false, true, true, colors.green, {{",", colors.brown}}, "air", {{drop="sapling", block=false}}, saplingUpdate, nil)
 
-function findConnected(pos, connectedBy, findType)
+findConnected = function(pos, connectedBy, findType)
 	local x, y = pos.x, pos.y
 	local checked, stepStack = {[x] = {[y] = true}}, {}
 	local woodFound = false
@@ -113,7 +166,7 @@ function findConnected(pos, connectedBy, findType)
 	end
 end
 
-leavesUpdate = function(block, pos)
+leavesUpdate = function(block, pos, properties)
 	if math.random(25) == math.random(25) then
 		connected, woodPos = findConnected(pos, "leaves", "wood")
 
@@ -130,10 +183,11 @@ leavesUpdate = function(block, pos)
 	end
 end
 
-createBlock("leaves", true, true, true, colors.green, {{" ", colors.black}}, "air", {{drop="sapling", block=false, drops = 1, randomize = 0}}, leavesUpdate)
-createBlock("wood", true, true, true, colors.brown, {{";", colors.black}, {",", colors.black}}, "air", {{drop="wood", block=true}})
+createBlock("leaves", true, true, true, colors.green, {{" ", colors.black}}, "air", {{drop="sapling", block=false, drops = 1, randomize = 0}}, leavesUpdate, nil)
+createBlock("appleLeaves", true, true, true, colors.green, {{"o", colors.red}}, "air", {{drop="apple", block=false}}, leavesUpdate, nil)
+createBlock("wood", true, true, true, colors.brown, {{";", colors.black}, {",", colors.black}, {"!", colors.black}}, "air", {{drop="wood", block=true}}, nil)
 
-grassDirtUpdate = function(block, pos)
+grassDirtUpdate = function(block, pos, properties)
 	rand = math.random(1, 10)
 
 	if rand == 1 then
@@ -153,15 +207,101 @@ grassDirtUpdate = function(block, pos)
 	end
 end
 
-createBlock("grass", true, true, true, colors.lime, {{" ", colors.black}}, "air", {{drop="dirt", block=true}}, grassDirtUpdate)
-createBlock("dirt", true, true, true, colors.brown, {{" ", colors.black}}, "air", {{drop="dirt", block=true}}, grassDirtUpdate)
-createBlock("stone", true, true, true, colors.gray, {{" ", colors.black}}, "air", {{drop="stone", block=true}}, nil)
+createBlock("grass", true, true, true, colors.lime, {{" ", colors.black}}, "air", {{drop="dirt", block=true}}, grassDirtUpdate, nil)
+createBlock("dirt", true, true, true, colors.brown, {{" ", colors.black}}, "air", {{drop="dirt", block=true}}, grassDirtUpdate, nil)
+createBlock("stone", true, true, true, colors.gray, {{" ", colors.black}}, "air", {{drop="stone", block=true}}, nil, nil)
 --createBlock("stonecave", false, false, false, colors.black, {{",", colors.black}, {"'", colors.black}, {"-", colors.black}, {";", colors.black}}, "stonecave", nil, nil)
-createBlock("coalore", true, true, true, colors.black, {{" ", colors.black}}, "air", {{drop="coal", drops=1, randomize=4}}, nil)
-createBlock("ironore", true, true, true, colors.lightGray, {{" ", colors.black}}, "air", {{drop="ironore", block=true}}, nil)
-createBlock("goldore", true, true, true, colors.yellow, {{" ", colors.black}}, "air", {{drop="goldore", block=true}}, nil)
-createBlock("diamondore", true, true, true, colors.lightBlue, {{">", colors.white}, {"<", colors.white}}, "air", {{drop="diamond", block=false}}, nil)
-createBlock("bedrock", true, false, true, colors.black, {{",", colors.gray}, {"'", colors.gray}, {"-", colors.gray}, {";", colors.gray}}, "air", nil, nil)
-createBlock("air", false, false, false, colors.lightBlue, {{" ", colors.black}}, "air", nil, nil)
-createBlock("none", false, false, false, colors.blue, {{" ", colors.black}}, "none", nil, nil)
-createBlock("note", false, false, false, colors.red, {{" ", colors.black}}, "none", nil, nil)
+createBlock("coalore", true, true, true, colors.black, {{" ", colors.black}}, "air", {{drop="coal", drops=1, randomize=4}}, nil, nil)
+createBlock("ironore", true, true, true, colors.lightGray, {{" ", colors.black}}, "air", {{drop="ironore", block=true}}, nil, nil)
+createBlock("goldore", true, true, true, colors.yellow, {{" ", colors.black}}, "air", {{drop="goldore", block=true}}, nil, nil)
+createBlock("diamondore", true, true, true, colors.lightBlue, {{">", colors.white}, {"<", colors.white}}, "air", {{drop="diamond", block=false}}, nil, nil)
+createBlock("bedrock", true, false, true, colors.black, {{",", colors.gray}, {"'", colors.gray}, {"-", colors.gray}, {";", colors.gray}}, "air", nil, nil, nil)
+createBlock("air", false, false, false, colors.lightBlue, {{" ", colors.black}}, "air", nil, nil, nil)
+createBlock("none", false, false, false, colors.blue, {{" ", colors.black}}, "none", nil, nil, nil)
+createBlock("note", false, false, false, colors.red, {{" ", colors.black}}, "none", nil, nil, nil)
+
+charge = function(pos)
+	column = mapColumns[pos.x]
+
+	if column then
+		block = column[pos.y]
+
+		if block and block == "redstone" then
+			mapColumnBlockProperties[pos.x][pos.y].charged = true
+			return true
+		end
+	end
+
+	return false
+end
+
+containsPoint = function(table, point)
+	for i = 1, #table do
+		pointAtIndex = table[i]
+
+		if pointAtIndex.x == point.x and pointAtIndex.y == point.y then
+			return true
+		end
+	end
+
+	return false
+end
+
+updatedRedstonePoints = {}
+
+addRedstonePoint = function(pos)
+	updatedRedstonePoints[#updatedRedstonePoints + 1] = pos
+end
+calls = 0
+
+redstoneUpdate = function(pos, charge, distance)
+--calls = calls + 1
+--print(calls)
+	if distance < 16 and not containsPoint(updatedRedstonePoints, pos) then
+	--print("point ok")
+		block = mapColumns[pos.x][pos.y]
+
+		if block == "redstone" or block == "redstoneTorch" then
+			propertiesAtPos = mapColumnBlockProperties[pos.x][pos.y]
+
+			--if not propertiesAtPos.charged then
+				propertiesAtPos.charged = charge
+			--end
+
+			leftPos = {x=pos.x - 1, y=pos.y}
+			redstoneUpdate(leftPos, charge, distance + 1)
+
+			rightPos = {x=pos.x + 1, y=pos.y}
+			redstoneUpdate(rightPos, charge, distance + 1)
+
+			topPos = {x=pos.x, y=pos.y - 1}
+			redstoneUpdate(topPos, charge, distance + 1)
+
+			bottomPos = {x=pos.x, y=pos.y + 1}
+			redstoneUpdate(bottomPos, charge, distance + 1)
+		end
+
+		addRedstonePoint(pos)
+	end
+end
+
+redstoneTorchUpdate = function(block, pos, properties)
+	if block == "redstoneTorch" then
+		properties.charged = true
+
+		calls = 0
+		updatedRedstonePoints = {}
+		redstoneUpdate(pos, properties.charged, 0)
+	end
+end
+
+redstoneCharColor = function(properties)
+	if properties.charged then
+		return colors.red
+	else
+		return colors.brown
+	end
+end
+
+createBlock("redstone", false, true, true, colors.transparent, {{"_", colors.brown}}, "air", {{drop="redstone", block=false}}, nil, redstoneCharColor)
+createBlock("redstoneTorch", false, true, true, colors.transparent, {{"i", colors.brown}}, "air", {{drop="redstoneTorch", block=false}}, redstoneTorchUpdate, redstoneCharColor)

@@ -4,7 +4,7 @@ colors.transparent = 65536
 
 interfaceBackColor = colors.black
 
-terrains = {{"treeSpawn", "air"}, {"grass"}, {"dirt"}, {"stone", "coalore"}, {"stone", "coalore", "ironore"}, {"stone", "coalore", "ironore", "goldore"}, {"stone", "goldore", "diamondore"}}
+terrains = {{"air", "air"}, {"grass"}, {"dirt"}, {"stone", "coalore"}, {"stone", "coalore", "ironore"}, {"stone", "coalore", "ironore", "goldore"}, {"stone", "goldore", "diamondore"}}
 layers = {1, 1, 3, 5, 20, 15, 10}
 chances = {{1, 20}, {1}, {1}, {25, 1}, {30, 2, 1}, {50, 2, 1, 1}, {100, 5, 1}, {1}}
 
@@ -20,20 +20,36 @@ itemElement.isBlock = 5
 items = {
 		["apple"]={colors.transparent, {255, 0, 0}, {char="o", color=colors.red}, {
 																		{{char="\\", color=colors.brown}, {char="o", color=colors.green}},
-																		{{char="(", color=colors.red},    {char=")", color=colors.red}}
+																		{{char="(", color=colors.red}, {char=")", color=colors.red}}
 																	   }, false},
 		["coal"]={colors.transparent, {255, 0, 0}, {char="o", color=colors.gray}, {
 																		{{char="(", color=colors.gray}, {char=")", color=colors.gray, backColor = colors.transparent}},
-																		{{char="o", color=colors.gray},    {char="'", color=colors.gray}}
+																		{{char="o", color=colors.gray}, {char="'", color=colors.gray}}
 																	   }, false},
 		["diamond"]={colors.transparent, {255, 0, 0}, {char="o", color=colors.white}, {
 																		{{char="/", color=colors.lightBlue}, {char="\\", color=colors.lightBlue}},
-																		{{char="\\", color=colors.lightBlue},    {char="/", color=colors.lightBlue}}
+																		{{char="\\", color=colors.lightBlue}, {char="/", color=colors.lightBlue}}
 																	   }, false},
 		["cake"]={colors.transparent, {255, 0, 0}, {char="O", color=colors.yellow}, {
-																		{{char="\,", color=colors.yellow}, {char="\,", color=colors.yellow}},
-																		{{char="(", color=colors.brown},    {char=")", color=colors.brown}}
-																	   }, false}
+																		{{char=",", color=colors.yellow}, {char=",", color=colors.yellow}},
+																		{{char="(", color=colors.brown}, {char=")", color=colors.brown}}
+																	   }, false},
+		["wood"]={colors.brown, {255, 0, 0}, {char=";", color=colors.black}, {
+																		{{char=",", color=colors.black, backColor=colors.brown}, {char=";", color=colors.black, backColor=colors.brown}},
+																		{{char="!", color=colors.black, backColor=colors.brown}, {char=":", color=colors.black, backColor=colors.brown}}
+																	   }, true},
+		["sapling"]={colors.green, {255, 0, 0}, {char=",", color=colors.brown}, {
+																		{{char="c", color=colors.lime, backColor=colors.green}, {char="O", color=colors.lime, backColor=colors.green}},
+																		{{char="\\", color=colors.brown}, {char="[", color=colors.brown}}
+																	   }, true},
+		["redstone"]={colors.transparent, {255, 0, 0}, {char="c", color=colors.red}, {
+																		{{char="<", color=colors.red}, {char=">", color=colors.red}},
+																		{{char=";", color=colors.red}, {char="'", color=colors.red}}
+																	   }, true},
+		["redstoneTorch"]={colors.transparent, {255, 0, 0}, {char="i", color=colors.red}, {
+																		{{char=" ", color=colors.black}, {char=",", color=colors.red}},
+																		{{char="/", color=colors.brown}, {char=" ", color=colors.black}}
+																	   }, true}
 		}
 
 blankChar = {char=" ", color=colors.black}
@@ -49,9 +65,11 @@ copy = function(thing)
 end
 
 for key,value in pairs(blocks) do
-	char = copy(blankChar)
-	char.backColor = value.color
-	items[key] = {value.color, value.colorRGB, char, {{char, char}, {char, char}}, true}
+	if not items[key] then
+		char = copy(blankChar)
+		char.backColor = value.color
+		items[key] = {value.color, value.colorRGB, char, {{char, char}, {char, char}}, true}
+	end
 end
 
 mapItems = {}
@@ -62,9 +80,12 @@ bedrock = "bedrock"
 
 mapColumns = {}
 mapColumnChars = {}
+mapColumnBlockProperties = {}
+--mapCharColors = {}
 mapColumnPosYs = {}
 mapHeight = 256
 moves = {1, -1, 0}
+moves = {0}
 moveChances = {10, 10, 50}
 downwardMoveChances = {15, 0, 0}
 upwardMoveChances = {0, 15, 0}
@@ -151,6 +172,7 @@ generateColumn = function(mapColumn)
 	y = posY
 	column = {}
 	columnChars = {}
+	blockProperties = {}
 
 	for i = 1, mapHeight do
 		column[i] = "none"
@@ -206,11 +228,14 @@ generateColumn = function(mapColumn)
 		blockChars = blockType.chars
 		charIndex = math.random(1, #blockChars)
 		columnChars[i] = charIndex
+
+		blockProperties[i] = {}
 	end
 
 	mapColumns[mapColumn] = column
 	mapColumnPosYs[mapColumn] = posY
 	mapColumnChars[mapColumn] = columnChars
+	mapColumnBlockProperties[mapColumn] = blockProperties
 end
 
 generateColumns = function()
@@ -277,61 +302,74 @@ drawGame = function()
 	off = {}
 	off.x = playerPosRounded.x - round(w / 2)
 	off.y = playerPosRounded.y - round(h / 2)
+
+	airColor = blocks["air"].color
 	
 	pixels = {}
 	backColors = {}
 	charColors = {}
 
-	for y = 1, h - 1 do
-		posY = y + off.y
+	for x = 1, w do
+		posX = x + off.x
+		column = mapColumns[posX]
+		columnChars = mapColumnChars[posX]
 
-		pixelRow = {}
-		backColorRow = {}
-		charColorRow = {}
+		pixelColumn = {}
+		backColorColumn = {}
+		charColorColumn = {}
 
-		for x = 1, w do
-			if not pointInArea({x=x, y=y}, player.hotbarArea) then
-				-- term.setCursorPos(x, y + 1)
-				--ind = x + (y + 1)*w
-				posX = x + off.x
-				column = mapColumns[posX]
+		if column then
+			for y = 1, h - 1 do
+				if not pointInArea({x=x, y=y}, player.hotbarArea) then
+					-- term.setCursorPos(x, y + 1)
+					--ind = x + (y + 1)*w
+					posY = y + off.y
 
-				if column then
 					block = column[posY]
-				else
-					block = "none"
-				end
+					blockType = blocks[block]
 
-				blockType = blocks[block]
+					if blockType then
+						color = blockType.color
 
-				if blockType then
-					backColorRow[x] = blockType.color
+						if color ~= colors.transparent then
+							backColorColumn[y] = blockType.color
+						else
+							backColorColumn[y] = airColor
+						end
 
-					charIndex = mapColumnChars[posX][posY]
-					if not charIndex then charIndex = 1 end
+						charIndex = columnChars[posY]
+						if not charIndex then charIndex = 1 end
 
-					blockChars = blockType.chars
-					blockChar = blockChars[charIndex]
+						blockChars = blockType.chars
+						blockChar = blockChars[charIndex]
 
-					if blockChar then
-						charColorRow[x] = blockChar[2]
-						pixelRow[x] = blockChar[1]
+						pixelColumn[y] = blockChar[1]
+
+						if blockType.getCharColor then
+							charColorColumn[y] = blockType.getCharColor(mapColumnBlockProperties[posX][posY])
+						else
+							charColorColumn[y] = blockChar[2]
+						end
 					else
-						pixelRow[x] = " "
+						charColorColumn[y] = noneColor
+						backColorColumn[y] = noneColor
+						pixelColumn[y] = " "
 					end
 				else
-					charColorRow[x] = noneColor
-					backColorRow[x] = noneColor
-					pixelRow[x] = " "
+					pixelColumn[y] = "none"
 				end
-			else
-				pixelRow[x] = "none"
+			end
+		else
+			for y = 1, h - 1 do
+				charColorColumn[y] = noneColor
+				backColorColumn[y] = noneColor
+				pixelColumn[y] = " "
 			end
 		end
 
-		pixels[y] = pixelRow
-		backColors[y] = backColorRow
-		charColors[y] = charColorRow
+		pixels[x] = pixelColumn
+		backColors[x] = backColorColumn
+		charColors[x] = charColorColumn
 	end
 
 	for i = 1, #mapItems do
@@ -342,64 +380,55 @@ drawGame = function()
 			mapItemPos = {x=round(mapItemPos.x), y=round(mapItemPos.y)}
 			screenPos = {x=mapItemPos.x - off.x, y=mapItemPos.y - off.y}
 
-			if not pointInArea(screenPos, player.hotbarArea) then
-				--screenPos.y = screenPos.y + 1
-				--ind = screenPos.x + (screenPos.y+1)*w
-
+			if pixels[screenPos.x] and not pointInArea(screenPos, player.hotbarArea) then
 				itemType = items[mapItem.itemType]
 
 				if itemType then
-					if pixels[screenPos.y] then
-						backColor = itemType[itemElement.color]
+					backColor = itemType[itemElement.color]
 
-						if backColor == colors.transparent then
-							backColors[screenPos.y][screenPos.x] = blocks["air"].color
-						else
-						print(tostring(screenPos.x)..", "..tostring(screenPos.y))
-						print(tostring(w)..", "..tostring(h))
-						print(tostring(backColors[screenPos.y]))
-							backColors[screenPos.y][screenPos.x] = backColor
-						end
-						
-						char = itemType[itemElement.char]
-						charColors[screenPos.y][screenPos.x] = char.color
-						pixels[screenPos.y][screenPos.x] = char.char
+					if backColor ~= colors.transparent then
+						backColors[screenPos.x][screenPos.y] = backColor
 					end
+					
+					char = itemType[itemElement.char]
+					charColors[screenPos.x][screenPos.y] = char.color
+					pixels[screenPos.x][screenPos.y] = char.char
 				end
 			end
 		end
 	end
 
 	playerScreenPos = {x=playerPosRounded.x - off.x, y=playerPosRounded.y - off.y}
-	backColors[playerScreenPos.y][playerScreenPos.x] = colors.white
-	pixels[playerScreenPos.y][playerScreenPos.x] = " "
+	backColors[playerScreenPos.x][playerScreenPos.y] = colors.white
+	pixels[playerScreenPos.x][playerScreenPos.y] = " "
 
-	for y = 1, #pixels do
-		pixelRow = pixels[y]
-		charColorRow = charColors[y]
-		backColorRow = backColors[y]
-		term.setCursorPos(1, y + 1)
+	for x = 1, #pixels do
+		pixelColumn = pixels[x]
+		charColorColumn = charColors[x]
+		backColorColumn = backColors[x]
 
-		for x = 1, #pixelRow do
-			--ind = x+y*w
-			pixel = pixelRow[x]
+		for y = 1, #pixelColumn do
+			pixel = pixelColumn[y]
 
 			if pixel ~= "none" then
-				backColor = backColorRow[x]
+				term.setCursorPos(x, y + 1)
+				backColor = backColorColumn[y]
 
 				if backColor ~= nil and backColor ~= colors.transparent then
 					term.setBackgroundColor(backColor)
+				else
+					term.setBackgroundColor(noneColor)
 				end
 
-				charColor = charColorRow[x]
+				charColor = charColorColumn[y]
 
 				if charColor ~= nil then
 					term.setTextColor(charColor)
+				else
+					term.setTextColor(interfaceBackColor)
 				end
 
 				term.write(pixel)
-			else
-				term.setCursorPos(x + 1, y + 1)
 			end
 		end
 	end
@@ -500,10 +529,24 @@ createDrop = function(itemName, position, dir)
 end
 
 for i = 1, 15 do
-	createDrop("apple", {x=15, y=5}, math.random(-1, 1))
+	createDrop("redstone", {x=15, y=5}, math.random(-1, 1))
+	createDrop("redstoneTorch", {x=15, y=5}, math.random(-1, 1))
+	--addItemToInventory(createItem("redstone", {x=15, y=5}, math.random(-1, 1)))
+	--addItemToInventory(createItem("redstoneTorch", {x=15, y=5}, math.random(-1, 1)))
 end
 
 createDrop("cake", {x=10, y=5}, 0)
+
+--removeCharColorsAt = function(blockPos)
+--	for i = 1, #mapCharColors do
+--		charColor = mapCharColors[i]
+
+--		if charColor and charColor.pos.x == blockPos.x and charColor.pos.y == blockPos.y then
+--			table.remove(mapCharColors, i)
+--			i = i - 1
+--		end
+--	end
+--end
 
 breakBlock = function(blockPos)
 	block = mapColumns[blockPos.x][blockPos.y]
@@ -544,6 +587,8 @@ breakBlock = function(blockPos)
 		else
 			mapColumns[blockPos.x][blockPos.y] = "none"
 		end
+
+		mapColumnBlockProperties[blockPos.x][blockPos.y] = {}
 	end
 end
 
@@ -1512,7 +1557,7 @@ while running do
 			fpsTimer = fpsTimer + timeSinceLastFrame
 
 			if not paused and fpsTimer >= 1 then
-				setStatus(tostring(frames).." fps")
+				--setStatus(tostring(frames).." fps")
 				fpsTimer = 0
 				frames = 0
 			end
@@ -1534,11 +1579,11 @@ while running do
 
 								if success then table.remove(mapItems, i) end
 							else
-								-- oldItem = mapItems[i]
-								-- newItem = calculateNewPos(oldItem, timeSinceLastFrame)
-								-- newItem = collide(oldItem, newItem)
-								-- mapItems[i].pos = newItem.pos
-								-- mapItems[i].vel = newItem.vel
+								oldItem = mapItems[i]
+								newItem = calculateNewPos(oldItem, timeSinceLastFrame)
+								newItem = collide(oldItem, newItem)
+								mapItems[i].pos = newItem.pos
+								mapItems[i].vel = newItem.vel
 							end
 						end
 					end
@@ -1563,31 +1608,7 @@ while running do
 
 			frameTimer = os.startTimer(frameTime)
 		elseif p1 == blockUpdateTimer then
-			off = {}
-			off.x = playerPosRounded.x - round(w / 2)
-			off.y = playerPosRounded.y - round(h / 2)
-
-			for x = 1, w do
-				pos = {}
-				pos.x = x + off.x
-				column = mapColumns[pos.x]
-
-				if column then
-					for y = 1, h do
-						pos.y = y + off.y
-						block = column[pos.y]
-
-						if block then
-							blockType = blocks[block]
-
-							if blockType and blockType.onUpdate then
-								blockType.onUpdate(block, pos)
-							end
-						end
-					end
-				end
-			end
-
+			blockUpdates()
 			blockUpdateTimer = os.startTimer(blockUpdateTime)
 		end
 	end
