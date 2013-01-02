@@ -1,37 +1,128 @@
+function table.val_to_str ( v )
+  if "string" == type( v ) then
+    v = string.gsub( v, "\n", "\\n" )
+    if string.match( string.gsub(v,"[^'\"]",""), '^"+$' ) then
+      return "'" .. v .. "'"
+    end
+    return '"' .. string.gsub(v,'"', '\\"' ) .. '"'
+  else
+    return "table" == type( v ) and table.tostring( v ) or
+      tostring( v )
+  end
+end
+
+function table.key_to_str ( k )
+  if "string" == type( k ) and string.match( k, "^[_%a][_%a%d]*$" ) then
+    return k
+  else
+    return "[" .. table.val_to_str( k ) .. "]"
+  end
+end
+
+function table.tostring( tbl )
+  local result, done = {}, {}
+  for k, v in ipairs( tbl ) do
+    table.insert( result, table.val_to_str( v ) )
+    done[ k ] = true
+  end
+  for k, v in pairs( tbl ) do
+    if not done[ k ] then
+      table.insert( result,
+        table.key_to_str( k ) .. "=" .. table.val_to_str( v ) )
+    end
+  end
+  return "{" .. table.concat( result, "," ) .. "}"
+end
+
 blocks = {}
 
-createBlock = function(blockName, interactable, breakable, blocksBreaking, color, chars, replaceWith, drops, onBlockUpdate, getCharColor)
+createBlock = function(blockName, interactable, breakable, blocksBreaking, color, chars, replaceWith, drops, getEvents, getCharColor)
 	blocks[blockName] = {
 	interactable=interactable,
 	breakable=breakable,
 	blocksBreaking=blocksBreaking,
 	color=color, chars=chars,
 	replaceWith=replaceWith, drops=drops,
-	onUpdate=onBlockUpdate,
+	getEvents=getEvents,
 	getCharColor=getCharColor}
 end
 
-blockUpdates = function()
+blockUpdateQueue = {}
+
+checkTimerUpdates = function()
+	curClock = os.clock()
+	removeIndexes = {}
+
+	for i = 1, #blockUpdateQueue do
+		event = blockUpdateQueue[i]
+
+		if event.eventType == "timer" then
+			if curClock >= event.endClock then
+				pos = event.blockPos
+				blockAtPos = mapColumns[pos.x][pos.y]
+				propertiesAtPos = mapColumnBlockProperties[pos.x][pos.y]
+				event.blockUpdate(blockAtPos, pos, propertiesAtPos)
+
+				table.insert(removeIndexes, i)
+			end
+		end
+	end
+
+	for i = 0, #removeIndexes - 1 do
+		table.remove(blockUpdateQueue, removeIndexes[i] - i)
+	end
+end
+
+createTimerEvent = function(interval, blockPos, blockUpdate)
+	return {eventType="timer", blockPos=blockPos, endClock=os.clock() + interval, blockUpdate=blockUpdate}
+end
+
+addEvents = function(eventArray)
+	append = {}
+
+	for i = 1, #blockUpdateQueue do
+		queueEvent = blockUpdateQueue
+		queueEventPos = queueEvent.blockPos
+
+		for j = 1, #eventArray do
+			addEvent = eventArray[j]
+			addEventBlockPos = event.blockPos
+
+			if not addEvent or (addEventBlockPos.x ~= queueEventPos.x and addEventBlockPos.y ~= queueEventPos.y) then
+				table.insert(append, addEvent)
+				break
+			end
+		end
+	end
+
+	for i = 1, #append do
+		appendingItem = append[i]
+		table.insert(blockUpdateQueue, appendingItem)
+	end
+
+	--setStatus(#append.." ~= "..#eventArray[1])
+end
+
+findBlockEvents = function()
 	off = {}
 	off.x = playerPosRounded.x - round(w / 2)
 	off.y = playerPosRounded.y - round(h / 2)
 
-	for x = 1, w do
-		pos = {}
-		pos.x = x + off.x
-		column = mapColumns[pos.x]
+	-- for x = 1, w do
+		-- pos = {}
+		-- pos.x = x + off.x
+		-- column = mapColumnBlockProperties[pos.x]
 
-		if column then
-			for y = 1, h do
-				pos.y = y + off.y
-				block = column[pos.y]
-
-				if block and block == "redstone" then
-					mapColumnBlockProperties[pos.x][pos.y].charged = false
-				end
-			end
-		end
-	end
+		-- if column then
+			-- for y = 1, h do
+				-- pos.y = y + off.y
+				
+				-- if column[pos.y] then
+					-- column[pos.y].charged = false
+				-- end
+			-- end
+		-- end
+	-- end
 
 	for x = 1, w do
 		pos = {}
@@ -40,20 +131,24 @@ blockUpdates = function()
 		columnProperties = mapColumnBlockProperties[pos.x]
 
 		if column then
-			for y = 1, h do
+			for y = 1, h - 1 do
 				pos.y = y + off.y
 				block = column[pos.y]
 
 				if block then
 					blockType = blocks[block]
 
-					if blockType and blockType.onUpdate then
-						blockType.onUpdate(block, pos, columnProperties[pos.y])
+					if blockType and blockType.getEvents then
+						events = blockType.getEvents(block, pos, columnProperties[pos.y])
+						setStatus(block)
+						addEvents(events)
 					end
 				end
 			end
 		end
 	end
+
+	--checkUpdates()
 end
 
 tree = {{nil, "leaves", "leaves", "leaves", nil},
@@ -63,7 +158,7 @@ tree = {{nil, "leaves", "leaves", "leaves", nil},
 		{nil, nil, "wood", nil, nil}}
 treeOrigin = {x=3, y=5}
 
-treeSpawnUpdate = function(block, pos, properties)
+treeSpawn = function(block, pos, properties)
 	cancel = false
 
 	for y = 1, #tree do
@@ -96,8 +191,14 @@ treeSpawnUpdate = function(block, pos, properties)
 					blockPosition = {x=pos.x + x - treeOrigin.x, y=pos.y + y - treeOrigin.y}
 					setBlock(blockPosition, block)
 
-					if block == "leaves" and math.random(25) == 1 then
-						setBlock(blockPosition, "appleLeaves")
+					blockRandom = math.random(25)
+
+					if block == "leaves" then
+						if blockRandom == 1 then
+							setBlock(blockPosition, "appleLeaves")
+						elseif blockRandom >= 2 and blockRandom <= 10 then
+							setBlock(blockPosition, "saplingLeaves")
+						end
 					end
 				end
 			end
@@ -107,23 +208,29 @@ treeSpawnUpdate = function(block, pos, properties)
 	end
 end
 
-createBlock("treeSpawn", false, true, true, colors.transparent, {{" ", colors.black}}, "air", {}, treeSpawnUpdate, nil)
-
-saplingUpdate = function(block, pos, properties)
-	blockUnder = mapColumns[pos.x][pos.y + 1]
-
-	if not blockUnder or (blockUnder ~= "grass" and blockUnder ~= "dirt") then
-		breakBlock(pos)
-	else
-		rand = math.random(1, 5)
-
-		if rand == 1 then
-			treeSpawnUpdate(block, pos)
-		end
-	end
+treeSpawnEvents = function(block, pos, properties)
+	return {createTimerEvent(0, pos, treeSpawn)}
 end
 
-createBlock("sapling", false, true, true, colors.green, {{",", colors.brown}}, "air", {{drop="sapling", block=false}}, saplingUpdate, nil)
+createBlock("treeSpawn", false, true, true, colors.green, {{",", colors.brown}}, "air", {{drop="sapling", block=false}}, treeSpawnEvents, nil)
+
+saplingEvents = function(block, pos, properties)
+	return {createTimerEvent(20 + rand(5), pos, treeSpawn)}
+end
+
+createBlock("sapling", false, true, true, colors.green, {{",", colors.brown}}, "air", {{drop="sapling", block=false}}, saplingEvents, nil)
+
+contains = function(checkTable, item)
+	for i = 1, #checkTable do
+		itemAtIndex = checkTable[i]
+
+		if itemAtIndex == item then
+			return true
+		end
+	end
+
+	return false
+end
 
 findConnected = function(pos, connectedBy, findType)
 	local x, y = pos.x, pos.y
@@ -131,23 +238,23 @@ findConnected = function(pos, connectedBy, findType)
 	local woodFound = false
 
 	while true do
-		if mapColumns[x][y] ~= findType then
-			if (not checked[x-1] or not checked[x-1][y]) and (mapColumns[x-1][y] == connectedBy or mapColumns[x-1][y] == findType) then
+		if not contains(findType, mapColumns[x][y]) then
+			if (not checked[x-1] or not checked[x-1][y]) and (contains(connectedBy, mapColumns[x-1][y]) or contains(findType, mapColumns[x-1][y])) then
 				if not checked[x-1] then checked[x-1] = {} end
 				checked[x-1][y] = true
 				stepStack[#stepStack + 1] = {x, y}
 				x = x - 1
-			elseif (not checked[x+1] or not checked[x+1][y]) and (mapColumns[x+1][y] == connectedBy or mapColumns[x+1][y] == findType) then
+			elseif (not checked[x+1] or not checked[x+1][y]) and (contains(connectedBy, mapColumns[x+1][y]) or contains(findType, mapColumns[x+1][y])) then
 				if not checked[x+1] then checked[x+1] = {} end
 				checked[x+1][y] = true
 				stepStack[#stepStack + 1] = {x, y}
 				x = x + 1
-			elseif (not checked[x] or not checked[x][y+1]) and (mapColumns[x][y+1] == connectedBy or mapColumns[x][y+1] == findType) then
+			elseif (not checked[x] or not checked[x][y+1]) and (contains(connectedBy, mapColumns[x][y+1]) or contains(findType, mapColumns[x][y+1])) then
 				if not checked[x] then checked[x] = {} end
 				checked[x][y+1] = true
 				stepStack[#stepStack + 1] = {x, y}
 				y = y + 1
-			elseif (not checked[x] or not checked[x][y-1]) and (mapColumns[x][y-1] == connectedBy or mapColumns[x][y-1] == findType) then
+			elseif (not checked[x] or not checked[x][y-1]) and (contains(connectedBy, mapColumns[x][y-1]) or contains(findType, mapColumns[x][y-1])) then
 				if not checked[x] then checked[x] = {} end
 				checked[x][y-1] = true
 				stepStack[#stepStack + 1] = {x, y}
@@ -166,49 +273,54 @@ findConnected = function(pos, connectedBy, findType)
 	end
 end
 
-leavesUpdate = function(block, pos, properties)
-	if math.random(25) == math.random(25) then
-		connected, woodPos = findConnected(pos, "leaves", "wood")
+leavesUpdate = function(block, pos)
+	breakBlock(pos)
+end
 
-		if not connected then
-			breakBlock(pos)
-		else
-			connectedToDirt = findConnected(woodPos, "wood", "dirt")
-			connectedToGrass = findConnected(woodPos, "wood", "grass")
+leavesEvents = function(block, pos, properties)
+	connected, woodPos = findConnected(pos, {"leaves", "appleLeaves", "saplingLeaves"}, {"wood"})
 
-			if not connectedToDirt and not connectedToGrass then
-				breakBlock(pos)
-			end
-		end
+	if connected then
+		connected = findConnected(woodPos, {"wood"}, {"dirt", "grass"})
+	end
+
+	if not connected then
+		return {createTimerEvent(10 + (math.random(20) / 5), pos, leavesUpdate)}
 	end
 end
 
-createBlock("leaves", true, true, true, colors.green, {{" ", colors.black}}, "air", {{drop="sapling", block=false, drops = 1, randomize = 0}}, leavesUpdate, nil)
-createBlock("appleLeaves", true, true, true, colors.green, {{"o", colors.red}}, "air", {{drop="apple", block=false}}, leavesUpdate, nil)
-createBlock("wood", true, true, true, colors.brown, {{";", colors.black}, {",", colors.black}, {"!", colors.black}}, "air", {{drop="wood", block=true}}, nil)
+createBlock("leaves", true, true, true, colors.green, {{" ", colors.black}}, "air", {}, leavesEvents, nil)
+createBlock("appleLeaves", true, true, true, colors.green, {{"o", colors.red}}, "air", {{drop="apple", block=false}}, leavesEvents, nil)
+createBlock("saplingLeaves", true, true, true, colors.green, {{",", colors.brown}}, "air", {{drop="sapling", block=false}}, leavesEvents, nil)
+createBlock("wood", true, true, true, colors.brown, {{";", colors.black}, {",", colors.black}, {"!", colors.black}}, "air", {{drop="wood", block=true}}, nil, nil)
 
-grassDirtUpdate = function(block, pos, properties)
-	rand = math.random(1, 10)
+grassUpdate = function(block, pos)
+	if block == "dirt" then
+		setBlock(pos, "grass")
+		return true
+	else
+		setBlock(pos, "dirt")
+	end
+end
 
-	if rand == 1 then
-		blockAbove = mapColumns[pos.x][pos.y - 1]
+grassEvents = function(block, pos, properties)
+	blockAbove = mapColumns[pos.x][pos.y - 1]
 
-		if not blockAbove then
+	if not blockAbove then
+		setBlock(pos, "grass")
+	else
+		blockType = blocks[blockAbove]
+
+		if blockType and blockType.interactable and blockAbove ~= "leaves" then
+			setBlock(pos, "dirt")
+		else
 			setBlock(pos, "grass")
-		else
-			blockType = blocks[blockAbove]
-
-			if blockType and blockType.interactable and blockAbove ~= "leaves" then
-				setBlock(pos, "dirt")
-			else
-				setBlock(pos, "grass")
-			end
 		end
 	end
 end
 
-createBlock("grass", true, true, true, colors.lime, {{" ", colors.black}}, "air", {{drop="dirt", block=true}}, grassDirtUpdate, nil)
-createBlock("dirt", true, true, true, colors.brown, {{" ", colors.black}}, "air", {{drop="dirt", block=true}}, grassDirtUpdate, nil)
+createBlock("grass", true, true, true, colors.lime, {{" ", colors.black}}, "air", {{drop="dirt", block=true}}, nil, nil)
+createBlock("dirt", true, true, true, colors.brown, {{" ", colors.black}}, "air", {{drop="dirt", block=true}}, nil, nil)
 createBlock("stone", true, true, true, colors.gray, {{" ", colors.black}}, "air", {{drop="stone", block=true}}, nil, nil)
 --createBlock("stonecave", false, false, false, colors.black, {{",", colors.black}, {"'", colors.black}, {"-", colors.black}, {";", colors.black}}, "stonecave", nil, nil)
 createBlock("coalore", true, true, true, colors.black, {{" ", colors.black}}, "air", {{drop="coal", drops=1, randomize=4}}, nil, nil)
@@ -220,24 +332,24 @@ createBlock("air", false, false, false, colors.lightBlue, {{" ", colors.black}},
 createBlock("none", false, false, false, colors.blue, {{" ", colors.black}}, "none", nil, nil, nil)
 createBlock("note", false, false, false, colors.red, {{" ", colors.black}}, "none", nil, nil, nil)
 
-charge = function(pos)
-	column = mapColumns[pos.x]
+-- charge = function(pos)
+	-- column = mapColumns[pos.x]
 
-	if column then
-		block = column[pos.y]
+	-- if column then
+		-- block = column[pos.y]
 
-		if block and block == "redstone" then
-			mapColumnBlockProperties[pos.x][pos.y].charged = true
-			return true
-		end
-	end
+		-- if block and block == "redstone" then
+			-- mapColumnBlockProperties[pos.x][pos.y].charged = true
+			-- return true
+		-- end
+	-- end
 
-	return false
-end
+	-- return false
+-- end
 
-containsPoint = function(table, point)
-	for i = 1, #table do
-		pointAtIndex = table[i]
+containsPoint = function(checkTable, point)
+	for i = 1, #checkTable do
+		pointAtIndex = checkTable[i]
 
 		if pointAtIndex.x == point.x and pointAtIndex.y == point.y then
 			return true
@@ -252,46 +364,63 @@ updatedRedstonePoints = {}
 addRedstonePoint = function(pos)
 	updatedRedstonePoints[#updatedRedstonePoints + 1] = pos
 end
-calls = 0
 
-redstoneUpdate = function(pos, charge, distance)
---calls = calls + 1
---print(calls)
-	if distance < 16 and not containsPoint(updatedRedstonePoints, pos) then
-	--print("point ok")
-		block = mapColumns[pos.x][pos.y]
+redstoneUpdate = function(pos, charge, limit, dir, noUpDown)
+	curPos = pos
 
-		if block == "redstone" or block == "redstoneTorch" then
-			propertiesAtPos = mapColumnBlockProperties[pos.x][pos.y]
+	for i = 1, limit do
+		--if not containsPoint(updatedRedstonePoints, curPos) then
+			block = mapColumns[curPos.x][curPos.y]
+			blockType = blocks[block]
 
-			--if not propertiesAtPos.charged then
+			propertiesAtPos = mapColumnBlockProperties[curPos.x][curPos.y]
+
+			if not propertiesAtPos.charged and (blockType.interactable or block == "redstone") then
 				propertiesAtPos.charged = charge
-			--end
+			end
 
-			leftPos = {x=pos.x - 1, y=pos.y}
-			redstoneUpdate(leftPos, charge, distance + 1)
+			if block == "redstone" then
+				newPos = {x=curPos.x + dir, y=curPos.y}
+				curPos = newPos
+			--elseif block == "redstoneTorch" and noUpDown then
+			--	redstoneTorchUpdate(block, curPos, propertiesAtPos)
+			--	setStatus("fail")
+			--	return
+			elseif not noUpDown then
+				if blockType.interactable then
+					newPos = {x=curPos.x, y=curPos.y - 1}
+				else
+					newPos = {x=curPos.x, y=curPos.y + 1}
+				end
 
-			rightPos = {x=pos.x + 1, y=pos.y}
-			redstoneUpdate(rightPos, charge, distance + 1)
-
-			topPos = {x=pos.x, y=pos.y - 1}
-			redstoneUpdate(topPos, charge, distance + 1)
-
-			bottomPos = {x=pos.x, y=pos.y + 1}
-			redstoneUpdate(bottomPos, charge, distance + 1)
-		end
-
-		addRedstonePoint(pos)
+				noUpDown = true
+				curPos = newPos
+			else
+				return
+			end
+		--end
 	end
 end
 
 redstoneTorchUpdate = function(block, pos, properties)
 	if block == "redstoneTorch" then
-		properties.charged = true
+		properties.charged = not mapColumnBlockProperties[pos.x][pos.y + 1].charged
 
-		calls = 0
-		updatedRedstonePoints = {}
-		redstoneUpdate(pos, properties.charged, 0)
+		if properties.charged then
+			leftPos = {x=pos.x - 1, y=pos.y}
+			updatedRedstonePoints = {}
+			redstoneUpdate(leftPos, properties.charged, 16, -1, true)
+
+			rightPos = {x=pos.x + 1, y=pos.y}
+			updatedRedstonePoints = {}
+			redstoneUpdate(rightPos, properties.charged, 16, 1, true)
+
+			topPos = {x=pos.x, y=pos.y - 1}
+			updatedRedstonePoints = {}
+			redstoneUpdate(topPos, properties.charged, 16, -1)
+			updatedRedstonePoints = {}
+			redstoneUpdate(topPos, properties.charged, 16, 1)
+		end
 	end
 end
 
@@ -304,4 +433,4 @@ redstoneCharColor = function(properties)
 end
 
 createBlock("redstone", false, true, true, colors.transparent, {{"_", colors.brown}}, "air", {{drop="redstone", block=false}}, nil, redstoneCharColor)
-createBlock("redstoneTorch", false, true, true, colors.transparent, {{"i", colors.brown}}, "air", {{drop="redstoneTorch", block=false}}, redstoneTorchUpdate, redstoneCharColor)
+createBlock("redstoneTorch", false, true, true, colors.transparent, {{"i", colors.brown}}, "air", {{drop="redstoneTorch", block=false}}, nil, redstoneCharColor)

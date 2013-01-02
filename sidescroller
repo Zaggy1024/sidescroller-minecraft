@@ -4,7 +4,7 @@ colors.transparent = 65536
 
 interfaceBackColor = colors.black
 
-terrains = {{"air", "air"}, {"grass"}, {"dirt"}, {"stone", "coalore"}, {"stone", "coalore", "ironore"}, {"stone", "coalore", "ironore", "goldore"}, {"stone", "goldore", "diamondore"}}
+terrains = {{"treeSpawn", "air"}, {"grass"}, {"dirt"}, {"stone", "coalore"}, {"stone", "coalore", "ironore"}, {"stone", "coalore", "ironore", "goldore"}, {"stone", "goldore", "diamondore"}}
 layers = {1, 1, 3, 5, 20, 15, 10}
 chances = {{1, 20}, {1}, {1}, {25, 1}, {30, 2, 1}, {50, 2, 1, 1}, {100, 5, 1}, {1}}
 
@@ -85,7 +85,6 @@ mapColumnBlockProperties = {}
 mapColumnPosYs = {}
 mapHeight = 256
 moves = {1, -1, 0}
-moves = {0}
 moveChances = {10, 10, 50}
 downwardMoveChances = {15, 0, 0}
 upwardMoveChances = {0, 15, 0}
@@ -241,7 +240,7 @@ end
 generateColumns = function()
 	xPos = round(player.pos.x)
 
-	for x = 0, math.ceil(w / 2) + 5 do
+	for x = 0, w do
 		posXRight = xPos + x
 		column = mapColumns[posXRight]
 
@@ -290,21 +289,19 @@ end
 columnExists = function(x)
 	if mapColumns[x] then
 		return true
-	else
-		return false
 	end
+
+	return false
 end
 
 drawGame = function()
-	local ind = nil
-	
 	playerPosRounded = {x=round(player.pos.x), y=round(player.pos.y)}
 	off = {}
 	off.x = playerPosRounded.x - round(w / 2)
 	off.y = playerPosRounded.y - round(h / 2)
 
 	airColor = blocks["air"].color
-	
+
 	pixels = {}
 	backColors = {}
 	charColors = {}
@@ -321,8 +318,6 @@ drawGame = function()
 		if column then
 			for y = 1, h - 1 do
 				if not pointInArea({x=x, y=y}, player.hotbarArea) then
-					-- term.setCursorPos(x, y + 1)
-					--ind = x + (y + 1)*w
 					posY = y + off.y
 
 					block = column[posY]
@@ -452,7 +447,8 @@ draw = function()
 	if drawingInventory then
 		drawInventory()
 	else
-		parallel.waitForAll(generateColumns, drawGame)
+		generateColumns()
+		drawGame()
 	end
 end
 
@@ -518,6 +514,8 @@ setBlock = function(blockPos, block)
 	blockChars = blockType.chars
 	charIndex = math.random(1, #blockChars)
 	mapColumnChars[blockPos.x][blockPos.y] = charIndex
+
+	mapColumnBlockProperties[blockPos.x][blockPos.y] = {}
 end
 
 createItem = function(itemName, position, dir)
@@ -528,11 +526,9 @@ createDrop = function(itemName, position, dir)
 	mapItems[#mapItems + 1] = createItem(itemName, position, dir)
 end
 
-for i = 1, 15 do
+for i = 1, 25 do
 	createDrop("redstone", {x=15, y=5}, math.random(-1, 1))
-	createDrop("redstoneTorch", {x=15, y=5}, math.random(-1, 1))
-	--addItemToInventory(createItem("redstone", {x=15, y=5}, math.random(-1, 1)))
-	--addItemToInventory(createItem("redstoneTorch", {x=15, y=5}, math.random(-1, 1)))
+	createDrop("stone", {x=15, y=5}, math.random(-1, 1))
 end
 
 createDrop("cake", {x=10, y=5}, 0)
@@ -577,7 +573,7 @@ breakBlock = function(blockPos)
 				if drop.block then
 					addItemToInventory(createItem(itemName, {x=1, y=1}, 0))
 				else
-					createDrop(itemName, blockPos, 0)
+					createDrop(itemName, copy(blockPos), 0)
 				end
 			end
 		end
@@ -585,10 +581,8 @@ breakBlock = function(blockPos)
 		if blockPos.y > 0 then
 			setBlock(blockPos, blockType.replaceWith)
 		else
-			mapColumns[blockPos.x][blockPos.y] = "none"
+			setBlock(blockPos, "none")
 		end
-
-		mapColumnBlockProperties[blockPos.x][blockPos.y] = {}
 	end
 end
 
@@ -643,7 +637,7 @@ collide = function(entity, newEntity)
 	if columnExists(round(entity.pos.x)) and columnExists(round(newEntity.pos.x)) then
 		breaking = false
 
-		for i = 1, 10 do
+		for i = 1, 1 do
 			if breaking then break end
 
 			collidedEntity = {}
@@ -793,13 +787,6 @@ for y = 1, player.craftingSize.y do
 	player.crafting[y] = line
 end
 
-append = function(array, item)
-	newArray = array
-	newArray[#newArray + 1] = item
-
-	return newArray
-end
-
 addItemToInventory = function(item)
 	success = false
 
@@ -815,7 +802,7 @@ addItemToInventory = function(item)
 		end
 
 		if success then
-			itemAtIndex.items = append(itemAtIndex.items, item)
+			table.insert(itemAtIndex.items, item)
 			break
 		end
 	end
@@ -836,7 +823,7 @@ addItemToInventory = function(item)
 				end
 
 				if success then
-					itemAtIndex.items = append(itemAtIndex.items, item)
+					table.insert(itemAtIndex.items, item)
 					break
 				end
 			end
@@ -1374,7 +1361,7 @@ frameTimer = os.startTimer(0)
 frames = 0
 fpsTimer = 0
 
-blockUpdateTime = 0.0
+blockUpdateTime = 1.0
 blockUpdateTimer = os.startTimer(0)
 
 while running do
@@ -1402,6 +1389,8 @@ while running do
 			if not drawingInventory then
 				updateHotbar()
 			end
+		elseif p1 == keys.q then
+			running = false
 		end
 	elseif event == "mouse_scroll" then
 		player.selectedItem = player.selectedItem + p1
@@ -1472,7 +1461,7 @@ while running do
 					end
 
 					for i = 1, math.ceil(#split1.items / 2) do
-						split2.items = append(split2.items, table.remove(split1.items, i))
+						table.insert(split2.items, table.remove(split1.items, i))
 					end
 
 					if #split1.items <= 0 then
@@ -1491,7 +1480,7 @@ while running do
 					for i = 1, numItems do
 						if #placingItemSlot.items >= 64 then break end
 
-						placingItemSlot.items = append(placingItemSlot.items, table.remove(movingItemSlot.items))
+						table.insert(placingItemSlot.items, table.remove(movingItemSlot.items))
 					end
 
 					if #movingItemSlot.items <= 0 then
@@ -1521,7 +1510,7 @@ while running do
 						placingItemSlot.items = {}
 					end
 
-					placingItemSlot.items = append(placingItemSlot.items, table.remove(movingItemSlot.items))
+					table.insert(placingItemSlot.items, table.remove(movingItemSlot.items))
 
 					if #movingItemSlot.items <= 0 then
 						movingItemSlot = copy(blankItem)
@@ -1604,12 +1593,16 @@ while running do
 				playerPosString = "x: "..player.pos.x..", y: "..player.pos.y
 			end
 
+			checkTimerUpdates()
+
 			draw()
 
 			frameTimer = os.startTimer(frameTime)
 		elseif p1 == blockUpdateTimer then
-			blockUpdates()
+			findBlockEvents()
 			blockUpdateTimer = os.startTimer(blockUpdateTime)
 		end
 	end
 end
+
+sleep(5)

@@ -1,0 +1,6 @@
+to-do:
+
+better collision detection
+	* http://gamedev.stackexchange.com/questions/23554/general-2d-collision-detection-question
+
+proper seed handling (with chunks with their own seeds)
